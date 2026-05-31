@@ -198,7 +198,7 @@ async function main() {
 
       // Create streamable HTTP transport
       const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
+        sessionIdGenerator: undefined,
       });
 
       // Connect server to transport
