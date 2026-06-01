@@ -33,7 +33,12 @@ export function registerGenericRecordTools(
           "Raw Twenty filter object (see tool description for operands)",
         ),
       limit: z.number().optional().default(20).describe("Max results"),
-      offset: z.number().optional().default(0).describe("Results to skip"),
+      after: z
+        .string()
+        .optional()
+        .describe(
+          "Pagination cursor — pass the endCursor from a previous call to get the next page",
+        ),
       fields: z
         .array(z.string())
         .optional()
@@ -48,15 +53,19 @@ export function registerGenericRecordTools(
     },
     async (args) => {
       try {
-        const { records, totalCount } = await client.queryRecords(args);
+        const { records, totalCount, endCursor, hasNextPage } =
+          await client.queryRecords(args);
+        const pageNote = hasNextPage
+          ? `\n\nMore results available — pass after:"${endCursor}" for the next page.`
+          : "";
         return {
           content: [
             {
               type: "text" as const,
-              text: `Found ${totalCount} ${args.objectName} record(s) (showing ${records.length}):\n\n${JSON.stringify(records, null, 2)}`,
+              text: `Found ${totalCount} ${args.objectName} record(s) (showing ${records.length}):\n\n${JSON.stringify(records, null, 2)}${pageNote}`,
             },
           ],
-          data: { records, totalCount },
+          data: { records, totalCount, endCursor, hasNextPage },
         };
       } catch (error: any) {
         return {

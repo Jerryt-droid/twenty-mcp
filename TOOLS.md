@@ -500,7 +500,7 @@ Search/list records of any object with full custom-field support.
 
 - `objectName` (string, required): object name, singular or plural (e.g. `opportunity`, `opportunities`, or a custom object)
 - `filter` (object, optional): raw Twenty filter, e.g. `{ "name": { "ilike": "%acme%" } }`, `{ "stage": { "eq": "PROPOSAL" } }`. Operands: `eq, neq, gt, gte, lt, lte, ilike, in, is`; combine with `and`/`or` arrays.
-- `limit` (number, optional, default 20), `offset` (number, optional, default 0)
+- `limit` (number, optional, default 20), `after` (string, optional): pagination cursor — pass the `endCursor` from a previous call to fetch the next page
 - `fields` (string[], optional): explicit GraphQL selection — use for relation fields, e.g. `["id","name","company { id name }"]`
 - `includeSystemFields` (boolean, optional): include `createdAt` etc.
 

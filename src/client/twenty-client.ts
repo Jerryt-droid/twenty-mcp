@@ -1437,10 +1437,16 @@ export class TwentyClient {
     objectName: string;
     filter?: Record<string, any>;
     limit?: number;
-    offset?: number;
+    // Twenty's data API uses cursor pagination (first/after), NOT offset/skip.
+    after?: string;
     fields?: string[];
     includeSystemFields?: boolean;
-  }): Promise<{ records: any[]; totalCount: number }> {
+  }): Promise<{
+    records: any[];
+    totalCount: number;
+    endCursor?: string;
+    hasNextPage: boolean;
+  }> {
     const meta = await this.resolveObjectMeta(input.objectName);
     const selection =
       input.fields && input.fields.length > 0
@@ -1448,9 +1454,13 @@ export class TwentyClient {
         : this.buildSelectionSet(meta.fields, input.includeSystemFields);
 
     const query = `
-      query Query${meta.typePrefix}($filter: ${meta.typePrefix}FilterInput, $first: Int, $skip: Int) {
-        ${meta.namePlural}(filter: $filter, first: $first, skip: $skip) {
+      query Query${meta.typePrefix}($filter: ${meta.typePrefix}FilterInput, $first: Int, $after: String) {
+        ${meta.namePlural}(filter: $filter, first: $first, after: $after) {
           totalCount
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
           edges {
             node {
               ${selection}
@@ -1466,13 +1476,15 @@ export class TwentyClient {
           ? input.filter
           : undefined,
       first: input.limit ?? 20,
-      skip: input.offset ?? 0,
+      after: input.after,
     })) as any;
 
     const connection = result[meta.namePlural];
     return {
       records: connection.edges.map((edge: any) => edge.node),
       totalCount: connection.totalCount ?? connection.edges.length,
+      endCursor: connection.pageInfo?.endCursor ?? undefined,
+      hasNextPage: connection.pageInfo?.hasNextPage ?? false,
     };
   }
 
