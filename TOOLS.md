@@ -16,9 +16,11 @@ This document provides detailed information about all 29 tools available in the 
 ## Contact Management Tools
 
 ### create_contact
+
 Creates a new contact in Twenty CRM.
 
 **Parameters:**
+
 - `firstName` (string, required): Contact's first name
 - `lastName` (string, required): Contact's last name
 - `email` (string, optional): Contact's email address
@@ -29,6 +31,7 @@ Creates a new contact in Twenty CRM.
 - `address` (object, optional): Address with city, state, country fields
 
 **Example:**
+
 ```json
 {
   "firstName": "Jane",
@@ -40,24 +43,30 @@ Creates a new contact in Twenty CRM.
 ```
 
 ### get_contact
+
 Retrieves a contact by their ID.
 
 **Parameters:**
+
 - `id` (string, required): Contact's unique identifier
 
 **Returns:** Complete contact information including relationships
 
 ### update_contact
+
 Updates an existing contact's information.
 
 **Parameters:**
+
 - `id` (string, required): Contact's unique identifier
 - All other parameters from `create_contact` (optional)
 
 ### search_contacts
+
 Searches for contacts by name or email.
 
 **Parameters:**
+
 - `query` (string, required): Search query (searches in names and emails)
 - `limit` (number, optional): Maximum results to return (default: 20)
 
@@ -66,9 +75,11 @@ Searches for contacts by name or email.
 ## Company Management Tools
 
 ### create_company
+
 Creates a new company in Twenty CRM.
 
 **Parameters:**
+
 - `name` (string, required): Company name
 - `domain` (string, optional): Company website domain
 - `employees` (number, optional): Number of employees
@@ -78,6 +89,7 @@ Creates a new company in Twenty CRM.
 - `address` (object, optional): Company address
 
 **Example:**
+
 ```json
 {
   "name": "Acme Corporation",
@@ -88,31 +100,39 @@ Creates a new company in Twenty CRM.
 ```
 
 ### get_company
+
 Retrieves a company by ID.
 
 **Parameters:**
+
 - `id` (string, required): Company's unique identifier
 
 ### update_company
+
 Updates an existing company's information.
 
 **Parameters:**
+
 - `id` (string, required): Company's unique identifier
 - All other parameters from `create_company` (optional)
 
 ### search_companies
+
 Searches for companies by name or domain.
 
 **Parameters:**
+
 - `query` (string, required): Search query
 - `limit` (number, optional): Maximum results (default: 20)
 
 ## Opportunity Management Tools
 
 ### create_opportunity
+
 Creates a new sales opportunity.
 
 **Parameters:**
+
 - `name` (string, required): Opportunity name
 - `stage` (string, required): Current stage (e.g., "PROSPECT", "PROPOSAL", "CLOSED")
 - `amount` (number, optional): Deal value
@@ -123,22 +143,28 @@ Creates a new sales opportunity.
 - `description` (string, optional): Opportunity details
 
 ### get_opportunity
+
 Retrieves an opportunity by ID.
 
 **Parameters:**
+
 - `id` (string, required): Opportunity's unique identifier
 
 ### update_opportunity
+
 Updates an existing opportunity.
 
 **Parameters:**
+
 - `id` (string, required): Opportunity's unique identifier
 - All other parameters from `create_opportunity` (optional)
 
 ### search_opportunities
+
 Advanced search for opportunities with filters.
 
 **Parameters:**
+
 - `stage` (string, optional): Filter by stage
 - `minAmount` (number, optional): Minimum deal value
 - `maxAmount` (number, optional): Maximum deal value
@@ -147,9 +173,11 @@ Advanced search for opportunities with filters.
 - `limit` (number, optional): Maximum results
 
 ### list_opportunities_by_stage
+
 Lists opportunities grouped by sales stage.
 
 **Parameters:**
+
 - `includeAmount` (boolean, optional): Include total amounts per stage
 
 **Returns:** Opportunities organized by pipeline stage
@@ -157,18 +185,22 @@ Lists opportunities grouped by sales stage.
 ## Activity Management Tools
 
 ### get_activities
+
 Retrieves a unified timeline of all activities (tasks, notes, comments).
 
 **Parameters:**
+
 - `limit` (number, optional): Maximum activities to return (default: 50)
 - `offset` (number, optional): Pagination offset
 
 **Returns:** Chronologically sorted activity timeline
 
 ### filter_activities
+
 Filters activities by specific criteria.
 
 **Parameters:**
+
 - `type` (string, optional): Activity type (TASK, NOTE, COMMENT)
 - `entityType` (string, optional): Related entity type (CONTACT, COMPANY, etc.)
 - `entityId` (string, optional): Specific entity ID
@@ -177,17 +209,21 @@ Filters activities by specific criteria.
 - `limit` (number, optional): Maximum results
 
 ### create_comment
+
 Creates a comment on any CRM record.
 
 **Parameters:**
+
 - `entityType` (string, required): Type of entity (CONTACT, COMPANY, OPPORTUNITY)
 - `entityId` (string, required): Entity's unique identifier
 - `content` (string, required): Comment text
 
 ### get_entity_activities
+
 Gets all activities related to a specific entity.
 
 **Parameters:**
+
 - `entityType` (string, required): Type of entity
 - `entityId` (string, required): Entity's unique identifier
 - `includeComments` (boolean, optional): Include comments in results
@@ -195,9 +231,11 @@ Gets all activities related to a specific entity.
 ## Task Management Tools
 
 ### create_task
+
 Creates a new task.
 
 **Parameters:**
+
 - `title` (string, required): Task title
 - `description` (string, optional): Task details
 - `dueDate` (string, optional): Due date (ISO format)
@@ -207,9 +245,11 @@ Creates a new task.
 - `relatedEntityId` (string, optional): Related entity ID
 
 ### get_tasks
+
 Retrieves task list with optional filters.
 
 **Parameters:**
+
 - `status` (string, optional): Filter by status
 - `assigneeId` (string, optional): Filter by assignee
 - `includeCompleted` (boolean, optional): Include completed tasks
@@ -218,9 +258,11 @@ Retrieves task list with optional filters.
 ## Note Management Tools
 
 ### create_note
+
 Creates a note attached to an entity.
 
 **Parameters:**
+
 - `content` (string, required): Note content
 - `entityType` (string, required): Related entity type
 - `entityId` (string, required): Related entity ID
@@ -229,49 +271,61 @@ Creates a note attached to an entity.
 ## Relationship Management Tools
 
 ### get_company_contacts
+
 Gets all contacts associated with a specific company.
 
 **Parameters:**
+
 - `companyId` (string, required): Company's unique identifier
 - `includeInactive` (boolean, optional): Include inactive contacts
 
 ### get_person_opportunities
+
 Gets all opportunities associated with a specific contact.
 
 **Parameters:**
+
 - `personId` (string, required): Contact's unique identifier
 - `includeClosedDeals` (boolean, optional): Include closed opportunities
 
 ### link_opportunity_to_company
+
 Links an opportunity to a company and/or contact.
 
 **Parameters:**
+
 - `opportunityId` (string, required): Opportunity ID
 - `companyId` (string, optional): Company ID to link
 - `personId` (string, optional): Contact ID to link
 
 ### transfer_contact_to_company
+
 Transfers a contact from one company to another.
 
 **Parameters:**
+
 - `contactId` (string, required): Contact ID
 - `fromCompanyId` (string, required): Current company ID
 - `toCompanyId` (string, required): Target company ID
 - `preserveHistory` (boolean, optional): Keep activity history
 
 ### get_relationship_summary
+
 Gets relationship statistics for an entity.
 
 **Parameters:**
+
 - `entityType` (string, required): Entity type
 - `entityId` (string, required): Entity ID
 
 **Returns:** Summary of all relationships and counts
 
 ### find_orphaned_records
+
 Finds records missing important relationships.
 
 **Parameters:**
+
 - `recordType` (string, required): Type of records to check
 - `checkType` (string, required): What to check for (NO_COMPANY, NO_CONTACTS, etc.)
 - `limit` (number, optional): Maximum results
@@ -279,6 +333,7 @@ Finds records missing important relationships.
 ## Metadata Discovery Tools
 
 ### list_all_objects
+
 Lists all available CRM objects and their metadata.
 
 **Parameters:** None
@@ -286,17 +341,21 @@ Lists all available CRM objects and their metadata.
 **Returns:** Complete list of CRM objects with field counts and capabilities
 
 ### get_object_schema
+
 Gets detailed schema information for a specific object type.
 
 **Parameters:**
+
 - `objectType` (string, required): Object type name
 
 **Returns:** Complete field definitions, relationships, and constraints
 
 ### get_field_metadata
+
 Gets metadata for specific fields of an object.
 
 **Parameters:**
+
 - `objectType` (string, required): Object type name
 - `fieldNames` (array, optional): Specific fields to query
 
@@ -312,7 +371,7 @@ const company = await tools.create_company({
   name: "Tech Innovators Inc",
   domain: "techinnovators.com",
   employees: 150,
-  industry: "Software"
+  industry: "Software",
 });
 
 // 2. Create a contact at the company
@@ -321,7 +380,7 @@ const contact = await tools.create_contact({
   lastName: "Doe",
   email: "john@techinnovators.com",
   position: "CTO",
-  companyId: company.id
+  companyId: company.id,
 });
 
 // 3. Create an opportunity
@@ -331,14 +390,15 @@ const opportunity = await tools.create_opportunity({
   amount: 150000,
   companyId: company.id,
   personId: contact.id,
-  closeDate: "2024-03-31"
+  closeDate: "2024-03-31",
 });
 
 // 4. Add a note
 await tools.create_note({
-  content: "Initial meeting went well. They're interested in our enterprise package.",
+  content:
+    "Initial meeting went well. They're interested in our enterprise package.",
   entityType: "OPPORTUNITY",
-  entityId: opportunity.id
+  entityId: opportunity.id,
 });
 ```
 
@@ -348,7 +408,7 @@ await tools.create_note({
 // Search for contacts
 const contacts = await tools.search_contacts({
   query: "john@",
-  limit: 10
+  limit: 10,
 });
 
 // Update the first contact found
@@ -356,7 +416,7 @@ if (contacts.length > 0) {
   await tools.update_contact({
     id: contacts[0].id,
     position: "Chief Technology Officer",
-    phoneNumber: "+1-555-123-4567"
+    phoneNumber: "+1-555-123-4567",
   });
 }
 ```
@@ -368,13 +428,13 @@ if (contacts.length > 0) {
 const orphanedCompanies = await tools.find_orphaned_records({
   recordType: "COMPANY",
   checkType: "NO_CONTACTS",
-  limit: 20
+  limit: 20,
 });
 
 // Get relationship summary for a company
 const summary = await tools.get_relationship_summary({
   entityType: "COMPANY",
-  entityId: "company-id-here"
+  entityId: "company-id-here",
 });
 ```
 
@@ -396,6 +456,7 @@ All tools return standardized error responses:
 ```
 
 Common error codes:
+
 - `VALIDATION_ERROR`: Invalid input parameters
 - `NOT_FOUND`: Record not found
 - `PERMISSION_DENIED`: Insufficient permissions
@@ -413,6 +474,100 @@ Common error codes:
 ## Support
 
 For issues or questions:
+
 - Check the [Troubleshooting Guide](README.md#troubleshooting)
 - Review [test examples](tests/) for usage patterns
 - Open an issue on [GitHub](https://github.com/jezweb/twenty-mcp/issues)
+
+---
+
+## Generic Record Tools (custom-field aware)
+
+The named tools above (e.g. `create_opportunity`) only expose a fixed set of standard
+fields. The **generic** tools below work against **any** object — standard or custom —
+and automatically include **every active custom field**, because the GraphQL is built at
+call time from the object's metadata. Use these whenever you need to read or write a
+custom field, or work with a custom object.
+
+> Tip: call `get_object_schema` first to discover the exact field names and types for an
+> object before querying or writing.
+
+### query_records
+
+Search/list records of any object with full custom-field support.
+
+**Parameters:**
+
+- `objectName` (string, required): object name, singular or plural (e.g. `opportunity`, `opportunities`, or a custom object)
+- `filter` (object, optional): raw Twenty filter, e.g. `{ "name": { "ilike": "%acme%" } }`, `{ "stage": { "eq": "PROPOSAL" } }`. Operands: `eq, neq, gt, gte, lt, lte, ilike, in, is`; combine with `and`/`or` arrays.
+- `limit` (number, optional, default 20), `offset` (number, optional, default 0)
+- `fields` (string[], optional): explicit GraphQL selection — use for relation fields, e.g. `["id","name","company { id name }"]`
+- `includeSystemFields` (boolean, optional): include `createdAt` etc.
+
+### get_record
+
+Get a single record of any object by ID, including all custom fields.
+
+**Parameters:** `objectName` (required), `id` (required), `fields` (optional explicit selection)
+
+### create_record
+
+Create a record on any object with arbitrary fields, including custom ones.
+
+**Parameters:** `objectName` (required), `data` (object, required) — keyed by field name.
+
+Composite field shapes for `data`:
+
+- CURRENCY: `{ amountMicros, currencyCode }`
+- FULL_NAME: `{ firstName, lastName }`
+- EMAILS: `{ primaryEmail }`
+- PHONES: `{ primaryPhoneNumber, primaryPhoneCallingCode }`
+- LINKS: `{ primaryLinkUrl, primaryLinkLabel }`
+- ADDRESS: `{ addressStreet1, addressCity, addressCountry, ... }`
+- Relations: set via the foreign-key id field (e.g. `companyId`)
+
+### update_record
+
+Update a record on any object by ID, including custom fields. Same `data` shapes as `create_record`.
+
+**Parameters:** `objectName` (required), `id` (required), `data` (object, required)
+
+---
+
+## Metadata Write Tools (build data models)
+
+Create new custom objects and fields via Twenty's Metadata API (`/metadata` endpoint).
+No destructive operations are exposed by design — use `update_field` with `isActive:false`
+to deactivate rather than delete.
+
+### create_object
+
+Create a new custom object (data model).
+
+**Parameters:**
+
+- `nameSingular` / `namePlural` (string, required): camelCase API names, e.g. `project` / `projects`
+- `labelSingular` / `labelPlural` (string, required): human labels, e.g. `Project` / `Projects`
+- `description` (string, optional), `icon` (string, optional, Tabler icon name e.g. `IconBriefcase`)
+
+A default `name` text field is created automatically. Add more fields with `create_field`.
+
+### create_field
+
+Add a field (including custom fields) to an object.
+
+**Parameters:**
+
+- `objectName` (string, required): object to add the field to (singular or plural)
+- `name` (string, required): camelCase field API name, e.g. `industry`
+- `label` (string, required): human label, e.g. `Industry`
+- `type` (enum, required): `TEXT, NUMBER, BOOLEAN, DATE_TIME, DATE, CURRENCY, SELECT, MULTI_SELECT, RATING, EMAILS, PHONES, LINKS, ADDRESS, FULL_NAME, RICH_TEXT, RAW_JSON, UUID, POSITION`
+- `description` (string, optional), `icon` (string, optional)
+- `isNullable` (boolean, optional, default true), `defaultValue` (any, optional)
+- `options` (array, optional, for SELECT/MULTI_SELECT): `[{ value, label, color?, position? }]`
+
+### update_field
+
+Update a field by its metadata ID (rename, change description/icon, or deactivate via `isActive:false`). Find the field ID via `get_object_schema` / `get_field_metadata`.
+
+**Parameters:** `fieldId` (required), plus optional `label, description, icon, isActive, isNullable, defaultValue`

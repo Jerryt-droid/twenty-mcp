@@ -1,31 +1,113 @@
-import { GraphQLClient } from 'graphql-request';
-import { TwentyConfig, Person, Company, Task, Note, SearchOptions } from '../types/twenty.js';
-import { Opportunity, CreateOpportunityInput, UpdateOpportunityInput, SearchOpportunitiesInput } from '../types/opportunities.js';
-import { Activity, Comment, CreateCommentInput, ActivityFilter, EntityActivitiesInput, ActivityTimeline } from '../types/activities.js';
-import { ObjectMetadata, FieldMetadata, ObjectSchema, ObjectSummary, MetadataQueryOptions, FieldQueryOptions } from '../types/metadata.js';
-import { 
-  RelationshipSummary, 
-  CompanyContactsResult, 
-  PersonOpportunitiesResult, 
+import { GraphQLClient } from "graphql-request";
+import {
+  TwentyConfig,
+  Person,
+  Company,
+  Task,
+  Note,
+  SearchOptions,
+} from "../types/twenty.js";
+import {
+  Opportunity,
+  CreateOpportunityInput,
+  UpdateOpportunityInput,
+  SearchOpportunitiesInput,
+} from "../types/opportunities.js";
+import {
+  Activity,
+  Comment,
+  CreateCommentInput,
+  ActivityFilter,
+  EntityActivitiesInput,
+  ActivityTimeline,
+} from "../types/activities.js";
+import {
+  ObjectMetadata,
+  FieldMetadata,
+  ObjectSchema,
+  ObjectSummary,
+  MetadataQueryOptions,
+  FieldQueryOptions,
+} from "../types/metadata.js";
+import {
+  RelationshipSummary,
+  CompanyContactsResult,
+  PersonOpportunitiesResult,
   OpportunityActivitiesResult,
   RelationshipHierarchy,
   OrphanedRecords,
   LinkOpportunityInput,
   TransferContactInput,
-  BulkRelationshipUpdate
-} from '../types/relationships.js';
+  BulkRelationshipUpdate,
+} from "../types/relationships.js";
+
+// Composite field types and their GraphQL sub-fields. Mirrors Twenty's
+// COMPOSITE_FIELD_TYPE_SUB_FIELDS_NAMES so the generic record tools can build a
+// valid selection set for ANY field (standard or custom) without hardcoding.
+const COMPOSITE_SUB_FIELDS: Record<string, string[]> = {
+  CURRENCY: ["amountMicros", "currencyCode"],
+  EMAILS: ["primaryEmail", "additionalEmails"],
+  LINKS: ["primaryLinkUrl", "primaryLinkLabel", "secondaryLinks"],
+  LINK: ["url", "label"],
+  PHONES: [
+    "primaryPhoneNumber",
+    "primaryPhoneCountryCode",
+    "primaryPhoneCallingCode",
+    "additionalPhones",
+  ],
+  FULL_NAME: ["firstName", "lastName"],
+  ADDRESS: [
+    "addressStreet1",
+    "addressStreet2",
+    "addressCity",
+    "addressState",
+    "addressCountry",
+    "addressPostcode",
+    "addressLat",
+    "addressLng",
+  ],
+  ACTOR: ["source", "name", "workspaceMemberId", "context"],
+  RICH_TEXT: ["blocknote", "markdown"],
+  RICH_TEXT_V2: ["blocknote", "markdown"],
+};
+
+// Relation-like field types are skipped in the auto-built selection set (they
+// require their own sub-selection and direction handling). Read them via the
+// named tools or pass an explicit `fields` list to query_records.
+const SKIPPED_FIELD_TYPES = new Set([
+  "RELATION",
+  "MORPH_RELATION",
+  "TS_VECTOR",
+]);
+
+interface ResolvedObjectMeta {
+  nameSingular: string;
+  namePlural: string;
+  // PascalCase singular, used to build GraphQL input type names.
+  typePrefix: string;
+  objectMetadataId: string;
+  fields: FieldMetadata[];
+}
 
 export class TwentyClient {
   private client: GraphQLClient;
+  // Twenty exposes a SECOND GraphQL endpoint at /metadata for the Metadata API
+  // (objects + fields). This is what lets us create/update objects and fields.
+  private metadataClient: GraphQLClient;
   private baseUrl: string;
+  // Cache object metadata (fields + GraphQL names) so generic record tools don't
+  // re-introspect on every call. Keyed by the name the caller passed in.
+  private objectMetaCache: Map<string, ResolvedObjectMeta> = new Map();
 
   constructor(config: TwentyConfig) {
-    this.baseUrl = config.baseUrl || 'https://api.twenty.com';
-    this.client = new GraphQLClient(`${this.baseUrl}/graphql`, {
-      headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json',
-      },
+    this.baseUrl = config.baseUrl || "https://api.twenty.com";
+    const headers = {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+    };
+    this.client = new GraphQLClient(`${this.baseUrl}/graphql`, { headers });
+    this.metadataClient = new GraphQLClient(`${this.baseUrl}/metadata`, {
+      headers,
     });
   }
 
@@ -57,7 +139,9 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(mutation, { data: person }) as { createPerson: Person };
+    const result = (await this.client.request(mutation, { data: person })) as {
+      createPerson: Person;
+    };
     return result.createPerson;
   }
 
@@ -93,7 +177,9 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(query, { filter: { id: { eq: id } } }) as { people: { edges: { node: Person }[] } };
+    const result = (await this.client.request(query, {
+      filter: { id: { eq: id } },
+    })) as { people: { edges: { node: Person }[] } };
     return result.people.edges[0]?.node;
   }
 
@@ -125,11 +211,17 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(mutation, { id, data: updates }) as { updatePerson: Person };
+    const result = (await this.client.request(mutation, {
+      id,
+      data: updates,
+    })) as { updatePerson: Person };
     return result.updatePerson;
   }
 
-  async searchPeople(query: string, options: SearchOptions = {}): Promise<Person[]> {
+  async searchPeople(
+    query: string,
+    options: SearchOptions = {},
+  ): Promise<Person[]> {
     const searchQuery = `
       query SearchPeople($filter: PersonFilterInput, $first: Int, $after: String) {
         people(filter: $filter, first: $first, after: $after) {
@@ -165,16 +257,16 @@ export class TwentyClient {
       or: [
         { name: { firstName: { ilike: `%${query}%` } } },
         { name: { lastName: { ilike: `%${query}%` } } },
-        { emails: { primaryEmail: { ilike: `%${query}%` } } }
-      ]
+        { emails: { primaryEmail: { ilike: `%${query}%` } } },
+      ],
     };
 
-    const result = await this.client.request(searchQuery, {
+    const result = (await this.client.request(searchQuery, {
       filter,
       first: options.limit || 20,
-    }) as { people: { edges: { node: Person }[] } };
+    })) as { people: { edges: { node: Person }[] } };
 
-    return result.people.edges.map(edge => edge.node);
+    return result.people.edges.map((edge) => edge.node);
   }
 
   async createCompany(company: Company): Promise<Company> {
@@ -212,7 +304,9 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(mutation, { data: company }) as { createCompany: Company };
+    const result = (await this.client.request(mutation, { data: company })) as {
+      createCompany: Company;
+    };
     return result.createCompany;
   }
 
@@ -255,7 +349,9 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(query, { filter: { id: { eq: id } } }) as { companies: { edges: { node: Company }[] } };
+    const result = (await this.client.request(query, {
+      filter: { id: { eq: id } },
+    })) as { companies: { edges: { node: Company }[] } };
     return result.companies.edges[0]?.node;
   }
 
@@ -294,11 +390,17 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(mutation, { id, data: updates }) as { updateCompany: Company };
+    const result = (await this.client.request(mutation, {
+      id,
+      data: updates,
+    })) as { updateCompany: Company };
     return result.updateCompany;
   }
 
-  async searchCompanies(query: string, options: SearchOptions = {}): Promise<Company[]> {
+  async searchCompanies(
+    query: string,
+    options: SearchOptions = {},
+  ): Promise<Company[]> {
     const searchQuery = `
       query SearchCompanies($filter: CompanyFilterInput, $first: Int, $after: String) {
         companies(filter: $filter, first: $first, after: $after) {
@@ -340,16 +442,16 @@ export class TwentyClient {
     const filter = {
       or: [
         { name: { ilike: `%${query}%` } },
-        { domainName: { primaryLinkUrl: { ilike: `%${query}%` } } }
-      ]
+        { domainName: { primaryLinkUrl: { ilike: `%${query}%` } } },
+      ],
     };
 
-    const result = await this.client.request(searchQuery, {
+    const result = (await this.client.request(searchQuery, {
       filter,
       first: options.limit || 20,
-    }) as { companies: { edges: { node: Company }[] } };
+    })) as { companies: { edges: { node: Company }[] } };
 
-    return result.companies.edges.map(edge => edge.node);
+    return result.companies.edges.map((edge) => edge.node);
   }
 
   async createTask(task: Task): Promise<Task> {
@@ -366,7 +468,9 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(mutation, { data: task }) as { createTask: Task };
+    const result = (await this.client.request(mutation, { data: task })) as {
+      createTask: Task;
+    };
     return result.createTask;
   }
 
@@ -386,9 +490,11 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(query) as { tasks: { edges: { node: Task }[] } };
+    const result = (await this.client.request(query)) as {
+      tasks: { edges: { node: Task }[] };
+    };
 
-    return result.tasks.edges.map(edge => edge.node);
+    return result.tasks.edges.map((edge) => edge.node);
   }
 
   async createNote(note: Note): Promise<Note> {
@@ -403,11 +509,15 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(mutation, { data: note }) as { createNote: Note };
+    const result = (await this.client.request(mutation, { data: note })) as {
+      createNote: Note;
+    };
     return result.createNote;
   }
 
-  async createOpportunity(opportunity: CreateOpportunityInput): Promise<Opportunity> {
+  async createOpportunity(
+    opportunity: CreateOpportunityInput,
+  ): Promise<Opportunity> {
     const mutation = `
       mutation CreateOpportunity($data: OpportunityCreateInput!) {
         createOpportunity(data: $data) {
@@ -427,7 +537,9 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(mutation, { data: opportunity }) as { createOpportunity: Opportunity };
+    const result = (await this.client.request(mutation, {
+      data: opportunity,
+    })) as { createOpportunity: Opportunity };
     return result.createOpportunity;
   }
 
@@ -455,7 +567,9 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(query, { filter: { id: { eq: id } } }) as { opportunities: { edges: { node: Opportunity }[] } };
+    const result = (await this.client.request(query, {
+      filter: { id: { eq: id } },
+    })) as { opportunities: { edges: { node: Opportunity }[] } };
     return result.opportunities.edges[0]?.node;
   }
 
@@ -480,11 +594,15 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(mutation, { id, data }) as { updateOpportunity: Opportunity };
+    const result = (await this.client.request(mutation, { id, data })) as {
+      updateOpportunity: Opportunity;
+    };
     return result.updateOpportunity;
   }
 
-  async searchOpportunities(input: SearchOpportunitiesInput): Promise<Opportunity[]> {
+  async searchOpportunities(
+    input: SearchOpportunitiesInput,
+  ): Promise<Opportunity[]> {
     const query = `
       query SearchOpportunities($filter: OpportunityFilterInput, $first: Int, $skip: Int) {
         opportunities(filter: $filter, first: $first, skip: $skip) {
@@ -509,38 +627,40 @@ export class TwentyClient {
     `;
 
     const filters: any = {};
-    
+
     if (input.query) {
       filters.name = { ilike: `%${input.query}%` };
     }
-    
+
     if (input.stage) {
       filters.stage = { eq: input.stage };
     }
-    
+
     if (input.companyId) {
       filters.companyId = { eq: input.companyId };
     }
-    
+
     if (input.startDate || input.endDate) {
       filters.closeDate = {};
       if (input.startDate) filters.closeDate.gte = input.startDate;
       if (input.endDate) filters.closeDate.lte = input.endDate;
     }
-    
+
     if (input.minAmount || input.maxAmount) {
       filters.amount = { amountMicros: {} };
-      if (input.minAmount) filters.amount.amountMicros.gte = input.minAmount * 1000000;
-      if (input.maxAmount) filters.amount.amountMicros.lte = input.maxAmount * 1000000;
+      if (input.minAmount)
+        filters.amount.amountMicros.gte = input.minAmount * 1000000;
+      if (input.maxAmount)
+        filters.amount.amountMicros.lte = input.maxAmount * 1000000;
     }
 
-    const result = await this.client.request(query, {
+    const result = (await this.client.request(query, {
       filter: Object.keys(filters).length > 0 ? filters : undefined,
       first: input.limit || 20,
       skip: input.offset || 0,
-    }) as { opportunities: { edges: { node: Opportunity }[] } };
+    })) as { opportunities: { edges: { node: Opportunity }[] } };
 
-    return result.opportunities.edges.map(edge => edge.node);
+    return result.opportunities.edges.map((edge) => edge.node);
   }
 
   async listOpportunitiesByStage(): Promise<Record<string, Opportunity[]>> {
@@ -567,19 +687,21 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(query) as { opportunities: { edges: { node: Opportunity }[] } };
-    const opportunities = result.opportunities.edges.map(edge => edge.node);
-    
+    const result = (await this.client.request(query)) as {
+      opportunities: { edges: { node: Opportunity }[] };
+    };
+    const opportunities = result.opportunities.edges.map((edge) => edge.node);
+
     // Group by stage
     const groupedByStage: Record<string, Opportunity[]> = {};
-    opportunities.forEach(opp => {
-      const stage = opp.stage || 'No Stage';
+    opportunities.forEach((opp) => {
+      const stage = opp.stage || "No Stage";
       if (!groupedByStage[stage]) {
         groupedByStage[stage] = [];
       }
       groupedByStage[stage].push(opp);
     });
-    
+
     return groupedByStage;
   }
 
@@ -631,73 +753,85 @@ export class TwentyClient {
 
     const [tasksResult, notesResult] = await Promise.all([
       this.client.request(tasksQuery, { first: limit }),
-      this.client.request(notesQuery, { first: limit })
+      this.client.request(notesQuery, { first: limit }),
     ]);
-    
-    const typedTasksResult = tasksResult as { tasks: { edges: { node: any }[] } };
-    const typedNotesResult = notesResult as { notes: { edges: { node: any }[] } };
+
+    const typedTasksResult = tasksResult as {
+      tasks: { edges: { node: any }[] };
+    };
+    const typedNotesResult = notesResult as {
+      notes: { edges: { node: any }[] };
+    };
 
     // Transform and combine activities
     const activities: Activity[] = [];
 
-    typedTasksResult.tasks.edges.forEach(edge => {
+    typedTasksResult.tasks.edges.forEach((edge) => {
       const task = edge.node;
       activities.push({
         id: task.id,
-        type: 'task',
+        type: "task",
         title: task.title,
         body: task.body,
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,
         authorId: task.assigneeId,
-        author: task.assignee
+        author: task.assignee,
       });
     });
 
-    typedNotesResult.notes.edges.forEach(edge => {
+    typedNotesResult.notes.edges.forEach((edge) => {
       const note = edge.node;
       activities.push({
         id: note.id,
-        type: 'note',
+        type: "note",
         title: note.title,
         body: note.body,
         createdAt: note.createdAt,
         updatedAt: note.updatedAt,
         authorId: undefined,
-        author: undefined
+        author: undefined,
       });
     });
 
     // Sort by creation date (newest first)
-    activities.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    activities.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
 
     // Apply filters
     let filteredActivities = activities;
-    
+
     if (filter?.type && filter.type.length > 0) {
-      filteredActivities = filteredActivities.filter(activity => filter.type!.includes(activity.type));
+      filteredActivities = filteredActivities.filter((activity) =>
+        filter.type!.includes(activity.type),
+      );
     }
-    
+
     if (filter?.dateFrom) {
-      filteredActivities = filteredActivities.filter(activity => 
-        new Date(activity.createdAt) >= new Date(filter.dateFrom!)
+      filteredActivities = filteredActivities.filter(
+        (activity) =>
+          new Date(activity.createdAt) >= new Date(filter.dateFrom!),
       );
     }
-    
+
     if (filter?.dateTo) {
-      filteredActivities = filteredActivities.filter(activity => 
-        new Date(activity.createdAt) <= new Date(filter.dateTo!)
+      filteredActivities = filteredActivities.filter(
+        (activity) => new Date(activity.createdAt) <= new Date(filter.dateTo!),
       );
     }
-    
+
     if (filter?.authorId) {
-      filteredActivities = filteredActivities.filter(activity => activity.authorId === filter.authorId);
+      filteredActivities = filteredActivities.filter(
+        (activity) => activity.authorId === filter.authorId,
+      );
     }
 
     return {
       activities: filteredActivities,
       totalCount: filteredActivities.length,
-      hasMore: filteredActivities.length === limit
+      hasMore: filteredActivities.length === limit,
     };
   }
 
@@ -729,19 +863,25 @@ export class TwentyClient {
     const commentData = {
       body: input.body,
       ...(input.authorId && { authorId: input.authorId }),
-      ...(input.activityTargetId && { activityTargetId: input.activityTargetId })
+      ...(input.activityTargetId && {
+        activityTargetId: input.activityTargetId,
+      }),
     };
 
-    const result = await this.client.request(mutation, { data: commentData }) as { createComment: Comment };
+    const result = (await this.client.request(mutation, {
+      data: commentData,
+    })) as { createComment: Comment };
     return result.createComment;
   }
 
-  async getEntityActivities(input: EntityActivitiesInput): Promise<ActivityTimeline> {
+  async getEntityActivities(
+    input: EntityActivitiesInput,
+  ): Promise<ActivityTimeline> {
     // For now, we'll get general activities and filter client-side
     // In a real implementation, you'd want to use the entity relationships in the GraphQL query
     const activities = await this.getActivities({
       limit: input.limit,
-      offset: input.offset
+      offset: input.offset,
     });
 
     // Note: This is a simplified implementation. In practice, you'd want to query
@@ -749,7 +889,9 @@ export class TwentyClient {
     return activities;
   }
 
-  async listAllObjects(options: MetadataQueryOptions = {}): Promise<ObjectSummary> {
+  async listAllObjects(
+    options: MetadataQueryOptions = {},
+  ): Promise<ObjectSummary> {
     const query = `
       query GetObjectMetadata {
         objects {
@@ -773,28 +915,32 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(query) as { objects: { edges: { node: ObjectMetadata }[] } };
-    const allObjects = result.objects.edges.map(edge => edge.node);
+    const result = (await this.client.request(query)) as {
+      objects: { edges: { node: ObjectMetadata }[] };
+    };
+    const allObjects = result.objects.edges.map((edge) => edge.node);
 
     // Filter based on options
     let filteredObjects = allObjects;
-    
+
     if (options.activeOnly !== false) {
-      filteredObjects = filteredObjects.filter(obj => obj.isActive);
+      filteredObjects = filteredObjects.filter((obj) => obj.isActive);
     }
-    
+
     if (options.includeCustom === false) {
-      filteredObjects = filteredObjects.filter(obj => !obj.isCustom);
+      filteredObjects = filteredObjects.filter((obj) => !obj.isCustom);
     }
-    
+
     if (options.includeSystem === false) {
-      filteredObjects = filteredObjects.filter(obj => !obj.isSystem);
+      filteredObjects = filteredObjects.filter((obj) => !obj.isSystem);
     }
 
     // Group objects by type
-    const standard = filteredObjects.filter(obj => !obj.isCustom && !obj.isSystem);
-    const custom = filteredObjects.filter(obj => obj.isCustom);
-    const system = filteredObjects.filter(obj => obj.isSystem);
+    const standard = filteredObjects.filter(
+      (obj) => !obj.isCustom && !obj.isSystem,
+    );
+    const custom = filteredObjects.filter((obj) => obj.isCustom);
+    const system = filteredObjects.filter((obj) => obj.isSystem);
 
     return {
       standard,
@@ -803,7 +949,7 @@ export class TwentyClient {
       totalCount: filteredObjects.length,
       standardCount: standard.length,
       customCount: custom.length,
-      systemCount: system.length
+      systemCount: system.length,
     };
   }
 
@@ -856,22 +1002,22 @@ export class TwentyClient {
       filter = { id: { eq: objectNameOrId } };
     } else {
       // Assume it's a name
-      filter = { 
+      filter = {
         or: [
           { nameSingular: { eq: objectNameOrId } },
-          { namePlural: { eq: objectNameOrId } }
-        ]
+          { namePlural: { eq: objectNameOrId } },
+        ],
       };
     }
 
-    const result = await this.client.request(objectQuery, { filter }) as { 
-      objects: { 
-        edges: { 
-          node: ObjectMetadata & { 
-            fields: { edges: { node: FieldMetadata }[] } 
-          }
-        }[] 
-      } 
+    const result = (await this.client.request(objectQuery, { filter })) as {
+      objects: {
+        edges: {
+          node: ObjectMetadata & {
+            fields: { edges: { node: FieldMetadata }[] };
+          };
+        }[];
+      };
     };
 
     if (result.objects.edges.length === 0) {
@@ -879,7 +1025,7 @@ export class TwentyClient {
     }
 
     const objectNode = result.objects.edges[0].node;
-    const fields = objectNode.fields.edges.map(edge => edge.node);
+    const fields = objectNode.fields.edges.map((edge) => edge.node);
 
     return {
       object: {
@@ -895,14 +1041,16 @@ export class TwentyClient {
         isSystem: objectNode.isSystem,
         createdAt: objectNode.createdAt,
         updatedAt: objectNode.updatedAt,
-        fields
+        fields,
       },
       fields,
-      relationships: [] // TODO: Implement relationship discovery
+      relationships: [], // TODO: Implement relationship discovery
     };
   }
 
-  async getFieldMetadata(options: FieldQueryOptions = {}): Promise<FieldMetadata[]> {
+  async getFieldMetadata(
+    options: FieldQueryOptions = {},
+  ): Promise<FieldMetadata[]> {
     let query: string;
     let variables: any = {};
 
@@ -940,11 +1088,11 @@ export class TwentyClient {
       if (options.objectId) {
         variables.filter = { id: { eq: options.objectId } };
       } else {
-        variables.filter = { 
+        variables.filter = {
           or: [
             { nameSingular: { eq: options.objectName } },
-            { namePlural: { eq: options.objectName } }
-          ]
+            { namePlural: { eq: options.objectName } },
+          ],
         };
       }
     } else {
@@ -973,36 +1121,42 @@ export class TwentyClient {
       `;
     }
 
-    const result = await this.client.request(query, variables) as any;
-    
+    const result = (await this.client.request(query, variables)) as any;
+
     let fields: FieldMetadata[];
-    
+
     if (options.objectId || options.objectName) {
       if (result.objects.edges.length === 0) {
-        throw new Error(`Object not found: ${options.objectId || options.objectName}`);
+        throw new Error(
+          `Object not found: ${options.objectId || options.objectName}`,
+        );
       }
-      fields = result.objects.edges[0].node.fields.edges.map((edge: any) => edge.node);
+      fields = result.objects.edges[0].node.fields.edges.map(
+        (edge: any) => edge.node,
+      );
     } else {
       fields = result.fields.edges.map((edge: any) => edge.node);
     }
 
     // Apply filters
     let filteredFields = fields;
-    
+
     if (options.activeOnly !== false) {
-      filteredFields = filteredFields.filter(field => field.isActive);
+      filteredFields = filteredFields.filter((field) => field.isActive);
     }
-    
+
     if (options.includeCustom === false) {
-      filteredFields = filteredFields.filter(field => !field.isCustom);
+      filteredFields = filteredFields.filter((field) => !field.isCustom);
     }
-    
+
     if (options.includeSystem === false) {
-      filteredFields = filteredFields.filter(field => !field.isSystem);
+      filteredFields = filteredFields.filter((field) => !field.isSystem);
     }
-    
+
     if (options.fieldType) {
-      filteredFields = filteredFields.filter(field => field.type === options.fieldType);
+      filteredFields = filteredFields.filter(
+        (field) => field.type === options.fieldType,
+      );
     }
 
     return filteredFields;
@@ -1039,26 +1193,28 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(query, { companyId }) as any;
-    
+    const result = (await this.client.request(query, { companyId })) as any;
+
     const contacts = result.people.edges.map((edge: any) => ({
       id: edge.node.id,
       name: edge.node.name,
       email: edge.node.emails?.primaryEmail,
       phone: edge.node.phones?.primaryPhoneNumber,
       jobTitle: edge.node.jobTitle,
-      createdAt: edge.node.createdAt
+      createdAt: edge.node.createdAt,
     }));
 
     return {
       companyId,
-      companyName: result.company?.name || 'Unknown Company',
+      companyName: result.company?.name || "Unknown Company",
       contacts,
-      totalContacts: contacts.length
+      totalContacts: contacts.length,
     };
   }
 
-  async getPersonOpportunities(personId: string): Promise<PersonOpportunitiesResult> {
+  async getPersonOpportunities(
+    personId: string,
+  ): Promise<PersonOpportunitiesResult> {
     const query = `
       query GetPersonOpportunities($personId: String!) {
         person(filter: { id: { eq: $personId } }) {
@@ -1091,16 +1247,20 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(query, { personId }) as any;
-    
-    const opportunities = result.opportunities.edges.map((edge: any) => edge.node);
+    const result = (await this.client.request(query, { personId })) as any;
+
+    const opportunities = result.opportunities.edges.map(
+      (edge: any) => edge.node,
+    );
     const person = result.person;
 
     return {
       personId,
-      personName: person ? `${person.name.firstName} ${person.name.lastName}` : 'Unknown Person',
+      personName: person
+        ? `${person.name.firstName} ${person.name.lastName}`
+        : "Unknown Person",
       opportunities,
-      totalOpportunities: opportunities.length
+      totalOpportunities: opportunities.length,
     };
   }
 
@@ -1129,12 +1289,13 @@ export class TwentyClient {
 
     const updateData: any = {};
     if (input.companyId) updateData.companyId = input.companyId;
-    if (input.pointOfContactId) updateData.pointOfContactId = input.pointOfContactId;
+    if (input.pointOfContactId)
+      updateData.pointOfContactId = input.pointOfContactId;
 
-    const result = await this.client.request(mutation, {
+    const result = (await this.client.request(mutation, {
       id: input.opportunityId,
-      data: updateData
-    }) as { updateOpportunity: any };
+      data: updateData,
+    })) as { updateOpportunity: any };
 
     return result.updateOpportunity;
   }
@@ -1157,53 +1318,59 @@ export class TwentyClient {
       }
     `;
 
-    const result = await this.client.request(mutation, {
+    const result = (await this.client.request(mutation, {
       id: input.contactId,
-      data: { companyId: input.toCompanyId }
-    }) as { updatePerson: any };
+      data: { companyId: input.toCompanyId },
+    })) as { updatePerson: any };
 
     return result.updatePerson;
   }
 
-  async getRelationshipSummary(entityId: string, entityType: string): Promise<RelationshipSummary> {
+  async getRelationshipSummary(
+    entityId: string,
+    entityType: string,
+  ): Promise<RelationshipSummary> {
     let counts = {
       companies: 0,
       contacts: 0,
       opportunities: 0,
       tasks: 0,
-      activities: 0
+      activities: 0,
     };
 
     try {
       switch (entityType.toLowerCase()) {
-        case 'company':
+        case "company":
           // Get contacts for this company
           const companyContacts = await this.getCompanyContacts(entityId);
           counts.contacts = companyContacts.totalContacts;
-          
+
           // Get opportunities for this company
-          const companyOpps = await this.searchOpportunities({ companyId: entityId, limit: 1000 });
+          const companyOpps = await this.searchOpportunities({
+            companyId: entityId,
+            limit: 1000,
+          });
           counts.opportunities = companyOpps.length;
           break;
-          
-        case 'person':
+
+        case "person":
           // Get opportunities for this person
           const personOpps = await this.getPersonOpportunities(entityId);
           counts.opportunities = personOpps.totalOpportunities;
-          
+
           // Get tasks assigned to this person (would need a specific query for filtering)
           // For now, we'll skip task counting as it requires a filtered query
           counts.tasks = 0;
           break;
       }
     } catch (error) {
-      console.warn('Error calculating relationship summary:', error);
+      console.warn("Error calculating relationship summary:", error);
     }
 
     return {
       entityId,
       entityType,
-      relationships: counts
+      relationships: counts,
     };
   }
 
@@ -1212,7 +1379,7 @@ export class TwentyClient {
       companies: [],
       contacts: [],
       opportunities: [],
-      tasks: []
+      tasks: [],
     };
 
     try {
@@ -1236,7 +1403,9 @@ export class TwentyClient {
         }
       `;
 
-      const companiesResult = await this.client.request(companiesQuery) as any;
+      const companiesResult = (await this.client.request(
+        companiesQuery,
+      )) as any;
       orphaned.companies = companiesResult.companies.edges
         .map((edge: any) => edge.node)
         .filter((company: any) => company.people.totalCount === 0)
@@ -1244,7 +1413,7 @@ export class TwentyClient {
           id: company.id,
           name: company.name,
           contactCount: 0,
-          opportunityCount: company.opportunities.totalCount
+          opportunityCount: company.opportunities.totalCount,
         }));
 
       // Find contacts without companies
@@ -1268,18 +1437,266 @@ export class TwentyClient {
         }
       `;
 
-      const contactsResult = await this.client.request(contactsQuery) as any;
+      const contactsResult = (await this.client.request(contactsQuery)) as any;
       orphaned.contacts = contactsResult.people.edges.map((edge: any) => ({
         id: edge.node.id,
         name: `${edge.node.name.firstName} ${edge.node.name.lastName}`,
         hasCompany: !!edge.node.companyId,
-        opportunityCount: edge.node.opportunities.totalCount
+        opportunityCount: edge.node.opportunities.totalCount,
       }));
-
     } catch (error) {
-      console.warn('Error finding orphaned records:', error);
+      console.warn("Error finding orphaned records:", error);
     }
 
     return orphaned;
+  }
+
+  // ===========================================================================
+  // Generic, schema-driven record operations.
+  // These introspect the object's fields from the Metadata API and build the
+  // GraphQL query/mutation dynamically, so ANY field (standard or custom) and
+  // ANY object (standard or custom) is supported without hardcoding.
+  // ===========================================================================
+
+  private capitalize(value: string): string {
+    return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
+  }
+
+  // Resolve an object's GraphQL naming + field list once, then cache it.
+  private async resolveObjectMeta(
+    objectName: string,
+  ): Promise<ResolvedObjectMeta> {
+    const cached = this.objectMetaCache.get(objectName);
+    if (cached) {
+      return cached;
+    }
+
+    const schema = await this.getObjectSchema(objectName);
+    const resolved: ResolvedObjectMeta = {
+      nameSingular: schema.object.nameSingular,
+      namePlural: schema.object.namePlural,
+      typePrefix: this.capitalize(schema.object.nameSingular),
+      objectMetadataId: schema.object.id,
+      fields: schema.fields,
+    };
+
+    this.objectMetaCache.set(objectName, resolved);
+    // Also cache under the canonical names so later lookups hit the cache.
+    this.objectMetaCache.set(resolved.nameSingular, resolved);
+    this.objectMetaCache.set(resolved.namePlural, resolved);
+
+    return resolved;
+  }
+
+  // Build a valid GraphQL selection set from field metadata. Composite fields
+  // get their sub-selection; relation-like fields are skipped (request them via
+  // an explicit `fields` list if needed).
+  private buildSelectionSet(
+    fields: FieldMetadata[],
+    includeSystem = false,
+  ): string {
+    const selections = new Set<string>(["id"]);
+
+    for (const field of fields) {
+      if (field.isActive === false) continue;
+      if (!includeSystem && field.isSystem) continue;
+      if (SKIPPED_FIELD_TYPES.has(field.type)) continue;
+
+      const subFields = COMPOSITE_SUB_FIELDS[field.type];
+      if (subFields) {
+        selections.add(`${field.name} { ${subFields.join(" ")} }`);
+      } else {
+        selections.add(field.name);
+      }
+    }
+
+    return Array.from(selections).join("\n");
+  }
+
+  async queryRecords(input: {
+    objectName: string;
+    filter?: Record<string, any>;
+    limit?: number;
+    offset?: number;
+    fields?: string[];
+    includeSystemFields?: boolean;
+  }): Promise<{ records: any[]; totalCount: number }> {
+    const meta = await this.resolveObjectMeta(input.objectName);
+    const selection =
+      input.fields && input.fields.length > 0
+        ? input.fields.join("\n")
+        : this.buildSelectionSet(meta.fields, input.includeSystemFields);
+
+    const query = `
+      query Query${meta.typePrefix}($filter: ${meta.typePrefix}FilterInput, $first: Int, $skip: Int) {
+        ${meta.namePlural}(filter: $filter, first: $first, skip: $skip) {
+          totalCount
+          edges {
+            node {
+              ${selection}
+            }
+          }
+        }
+      }
+    `;
+
+    const result = (await this.client.request(query, {
+      filter:
+        input.filter && Object.keys(input.filter).length > 0
+          ? input.filter
+          : undefined,
+      first: input.limit ?? 20,
+      skip: input.offset ?? 0,
+    })) as any;
+
+    const connection = result[meta.namePlural];
+    return {
+      records: connection.edges.map((edge: any) => edge.node),
+      totalCount: connection.totalCount ?? connection.edges.length,
+    };
+  }
+
+  async getRecordById(
+    objectName: string,
+    id: string,
+    fields?: string[],
+  ): Promise<any> {
+    const { records } = await this.queryRecords({
+      objectName,
+      filter: { id: { eq: id } },
+      limit: 1,
+      fields,
+    });
+    return records[0];
+  }
+
+  async createRecord(
+    objectName: string,
+    data: Record<string, any>,
+  ): Promise<any> {
+    const meta = await this.resolveObjectMeta(objectName);
+    const selection = this.buildSelectionSet(meta.fields);
+
+    const mutation = `
+      mutation Create${meta.typePrefix}($data: ${meta.typePrefix}CreateInput!) {
+        create${meta.typePrefix}(data: $data) {
+          ${selection}
+        }
+      }
+    `;
+
+    const result = (await this.client.request(mutation, { data })) as any;
+    return result[`create${meta.typePrefix}`];
+  }
+
+  async updateRecord(
+    objectName: string,
+    id: string,
+    data: Record<string, any>,
+  ): Promise<any> {
+    const meta = await this.resolveObjectMeta(objectName);
+    const selection = this.buildSelectionSet(meta.fields);
+
+    const mutation = `
+      mutation Update${meta.typePrefix}($id: ID!, $data: ${meta.typePrefix}UpdateInput!) {
+        update${meta.typePrefix}(id: $id, data: $data) {
+          ${selection}
+        }
+      }
+    `;
+
+    const result = (await this.client.request(mutation, { id, data })) as any;
+    return result[`update${meta.typePrefix}`];
+  }
+
+  // ===========================================================================
+  // Metadata API writes (via the /metadata endpoint): create objects + fields.
+  // ===========================================================================
+
+  async resolveObjectMetadataId(objectName: string): Promise<string> {
+    const meta = await this.resolveObjectMeta(objectName);
+    return meta.objectMetadataId;
+  }
+
+  async createObject(input: {
+    nameSingular: string;
+    namePlural: string;
+    labelSingular: string;
+    labelPlural: string;
+    description?: string;
+    icon?: string;
+  }): Promise<any> {
+    const mutation = `
+      mutation CreateOneObject($input: CreateOneObjectInput!) {
+        createOneObject(input: $input) {
+          id
+          nameSingular
+          namePlural
+          labelSingular
+          labelPlural
+          isCustom
+          isActive
+        }
+      }
+    `;
+
+    const result = (await this.metadataClient.request(mutation, {
+      input: { object: input },
+    })) as any;
+    return result.createOneObject;
+  }
+
+  async createField(input: {
+    objectMetadataId: string;
+    name: string;
+    label: string;
+    type: string;
+    description?: string;
+    icon?: string;
+    isNullable?: boolean;
+    defaultValue?: any;
+    options?: Array<{
+      value: string;
+      label: string;
+      color?: string;
+      position?: number;
+    }>;
+  }): Promise<any> {
+    const mutation = `
+      mutation CreateOneField($input: CreateOneFieldMetadataInput!) {
+        createOneField(input: $input) {
+          id
+          name
+          label
+          type
+          isCustom
+          isActive
+        }
+      }
+    `;
+
+    const result = (await this.metadataClient.request(mutation, {
+      input: { field: input },
+    })) as any;
+    return result.createOneField;
+  }
+
+  async updateField(id: string, update: Record<string, any>): Promise<any> {
+    const mutation = `
+      mutation UpdateOneField($input: UpdateOneFieldMetadataInput!) {
+        updateOneField(input: $input) {
+          id
+          name
+          label
+          type
+          isActive
+        }
+      }
+    `;
+
+    const result = (await this.metadataClient.request(mutation, {
+      input: { id, update },
+    })) as any;
+    return result.updateOneField;
   }
 }
