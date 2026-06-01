@@ -604,8 +604,8 @@ export class TwentyClient {
     input: SearchOpportunitiesInput,
   ): Promise<Opportunity[]> {
     const query = `
-      query SearchOpportunities($filter: OpportunityFilterInput, $first: Int, $skip: Int) {
-        opportunities(filter: $filter, first: $first, skip: $skip) {
+      query SearchOpportunities($filter: OpportunityFilterInput, $first: Int) {
+        opportunities(filter: $filter, first: $first) {
           edges {
             node {
               id
@@ -657,7 +657,6 @@ export class TwentyClient {
     const result = (await this.client.request(query, {
       filter: Object.keys(filters).length > 0 ? filters : undefined,
       first: input.limit || 20,
-      skip: input.offset || 0,
     })) as { opportunities: { edges: { node: Opportunity }[] } };
 
     return result.opportunities.edges.map((edge) => edge.node);
