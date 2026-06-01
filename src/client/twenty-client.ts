@@ -890,11 +890,13 @@ export class TwentyClient {
   }
 
   // Fetch every object's metadata (incl. its fields) from the Metadata API.
-  // The metadata API lives at /metadata (this.metadataClient), exposes objects
-  // via cursor paging (no server-side filter input), and returns fields as a
-  // plain `fieldsList` array — NOT the data API's `objects(filter)` / `fields {
-  // edges { node } }` shape. We fetch all and filter in JS, mirroring the
-  // official Twenty frontend (FIND_MANY_OBJECT_METADATA_ITEMS).
+  // The metadata API lives at /metadata (this.metadataClient) and exposes
+  // objects via cursor paging — NOT the data API's `objects(filter:
+  // ObjectFilterInput)` shape, which doesn't exist there. Fields are read via
+  // the relay-style `fields { edges { node } }` connection (present across
+  // Twenty versions; the newer `fieldsList` array isn't on older instances).
+  // We fetch all and filter in JS, mirroring the official Twenty frontend
+  // (FIND_MANY_OBJECT_METADATA_ITEMS).
   private async fetchObjectsMetadata(): Promise<
     (ObjectMetadata & { fields: FieldMetadata[] })[]
   > {
@@ -915,21 +917,25 @@ export class TwentyClient {
               isSystem
               createdAt
               updatedAt
-              fieldsList {
-                id
-                name
-                label
-                description
-                type
-                isCustom
-                isActive
-                isNullable
-                isSystem
-                defaultValue
-                options
-                settings
-                createdAt
-                updatedAt
+              fields(paging: { first: 1000 }) {
+                edges {
+                  node {
+                    id
+                    name
+                    label
+                    description
+                    type
+                    isCustom
+                    isActive
+                    isNullable
+                    isSystem
+                    defaultValue
+                    options
+                    settings
+                    createdAt
+                    updatedAt
+                  }
+                }
               }
             }
           }
@@ -943,8 +949,9 @@ export class TwentyClient {
 
     return result.objects.edges.map((edge) => {
       const node = edge.node;
-      const fields: FieldMetadata[] = (node.fieldsList ??
-        []) as FieldMetadata[];
+      const fields: FieldMetadata[] = (node.fields?.edges ?? []).map(
+        (fieldEdge: any) => fieldEdge.node,
+      ) as FieldMetadata[];
       return { ...node, fields };
     });
   }
