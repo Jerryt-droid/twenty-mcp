@@ -889,12 +889,18 @@ export class TwentyClient {
     return activities;
   }
 
-  async listAllObjects(
-    options: MetadataQueryOptions = {},
-  ): Promise<ObjectSummary> {
+  // Fetch every object's metadata (incl. its fields) from the Metadata API.
+  // The metadata API lives at /metadata (this.metadataClient), exposes objects
+  // via cursor paging (no server-side filter input), and returns fields as a
+  // plain `fieldsList` array — NOT the data API's `objects(filter)` / `fields {
+  // edges { node } }` shape. We fetch all and filter in JS, mirroring the
+  // official Twenty frontend (FIND_MANY_OBJECT_METADATA_ITEMS).
+  private async fetchObjectsMetadata(): Promise<
+    (ObjectMetadata & { fields: FieldMetadata[] })[]
+  > {
     const query = `
-      query GetObjectMetadata {
-        objects {
+      query GetObjectsMetadata {
+        objects(paging: { first: 1000 }) {
           edges {
             node {
               id
@@ -909,16 +915,44 @@ export class TwentyClient {
               isSystem
               createdAt
               updatedAt
+              fieldsList {
+                id
+                name
+                label
+                description
+                type
+                isCustom
+                isActive
+                isNullable
+                isSystem
+                defaultValue
+                options
+                settings
+                createdAt
+                updatedAt
+              }
             }
           }
         }
       }
     `;
 
-    const result = (await this.client.request(query)) as {
-      objects: { edges: { node: ObjectMetadata }[] };
+    const result = (await this.metadataClient.request(query)) as {
+      objects: { edges: { node: any }[] };
     };
-    const allObjects = result.objects.edges.map((edge) => edge.node);
+
+    return result.objects.edges.map((edge) => {
+      const node = edge.node;
+      const fields: FieldMetadata[] = (node.fieldsList ??
+        []) as FieldMetadata[];
+      return { ...node, fields };
+    });
+  }
+
+  async listAllObjects(
+    options: MetadataQueryOptions = {},
+  ): Promise<ObjectSummary> {
+    const allObjects = await this.fetchObjectsMetadata();
 
     // Filter based on options
     let filteredObjects = allObjects;
@@ -954,78 +988,21 @@ export class TwentyClient {
   }
 
   async getObjectSchema(objectNameOrId: string): Promise<ObjectSchema> {
-    const objectQuery = `
-      query GetObjectSchema($filter: ObjectFilterInput!) {
-        objects(filter: $filter) {
-          edges {
-            node {
-              id
-              nameSingular
-              namePlural
-              labelSingular
-              labelPlural
-              description
-              icon
-              isCustom
-              isActive
-              isSystem
-              createdAt
-              updatedAt
-              fields {
-                edges {
-                  node {
-                    id
-                    name
-                    label
-                    description
-                    type
-                    isCustom
-                    isActive
-                    isNullable
-                    isSystem
-                    defaultValue
-                    createdAt
-                    updatedAt
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    `;
+    const allObjects = await this.fetchObjectsMetadata();
 
-    // Try to find object by name first, then by ID
-    let filter;
-    if (objectNameOrId.match(/^[0-9a-fA-F-]{36}$/)) {
-      // Looks like a UUID
-      filter = { id: { eq: objectNameOrId } };
-    } else {
-      // Assume it's a name
-      filter = {
-        or: [
-          { nameSingular: { eq: objectNameOrId } },
-          { namePlural: { eq: objectNameOrId } },
-        ],
-      };
-    }
+    const isUuid = /^[0-9a-fA-F-]{36}$/.test(objectNameOrId);
+    const objectNode = allObjects.find((obj) =>
+      isUuid
+        ? obj.id === objectNameOrId
+        : obj.nameSingular === objectNameOrId ||
+          obj.namePlural === objectNameOrId,
+    );
 
-    const result = (await this.client.request(objectQuery, { filter })) as {
-      objects: {
-        edges: {
-          node: ObjectMetadata & {
-            fields: { edges: { node: FieldMetadata }[] };
-          };
-        }[];
-      };
-    };
-
-    if (result.objects.edges.length === 0) {
+    if (!objectNode) {
       throw new Error(`Object not found: ${objectNameOrId}`);
     }
 
-    const objectNode = result.objects.edges[0].node;
-    const fields = objectNode.fields.edges.map((edge) => edge.node);
+    const fields = objectNode.fields;
 
     return {
       object: {
@@ -1051,91 +1028,27 @@ export class TwentyClient {
   async getFieldMetadata(
     options: FieldQueryOptions = {},
   ): Promise<FieldMetadata[]> {
-    let query: string;
-    let variables: any = {};
-
-    if (options.objectId || options.objectName) {
-      // Get fields for a specific object
-      query = `
-        query GetFieldsForObject($filter: ObjectFilterInput!) {
-          objects(filter: $filter) {
-            edges {
-              node {
-                fields {
-                  edges {
-                    node {
-                      id
-                      name
-                      label
-                      description
-                      type
-                      isCustom
-                      isActive
-                      isNullable
-                      isSystem
-                      defaultValue
-                      createdAt
-                      updatedAt
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      `;
-
-      if (options.objectId) {
-        variables.filter = { id: { eq: options.objectId } };
-      } else {
-        variables.filter = {
-          or: [
-            { nameSingular: { eq: options.objectName } },
-            { namePlural: { eq: options.objectName } },
-          ],
-        };
-      }
-    } else {
-      // Get all fields across all objects
-      query = `
-        query GetAllFields {
-          fields {
-            edges {
-              node {
-                id
-                name
-                label
-                description
-                type
-                isCustom
-                isActive
-                isNullable
-                isSystem
-                defaultValue
-                createdAt
-                updatedAt
-              }
-            }
-          }
-        }
-      `;
-    }
-
-    const result = (await this.client.request(query, variables)) as any;
+    const allObjects = await this.fetchObjectsMetadata();
 
     let fields: FieldMetadata[];
 
     if (options.objectId || options.objectName) {
-      if (result.objects.edges.length === 0) {
+      const obj = allObjects.find((o) =>
+        options.objectId
+          ? o.id === options.objectId
+          : o.nameSingular === options.objectName ||
+            o.namePlural === options.objectName,
+      );
+      if (!obj) {
         throw new Error(
           `Object not found: ${options.objectId || options.objectName}`,
         );
       }
-      fields = result.objects.edges[0].node.fields.edges.map(
-        (edge: any) => edge.node,
-      );
+      fields = obj.fields;
     } else {
-      fields = result.fields.edges.map((edge: any) => edge.node);
+      // The metadata API has no top-level `fields` query; derive all fields
+      // from every object's fieldsList instead.
+      fields = allObjects.flatMap((o) => o.fields);
     }
 
     // Apply filters
